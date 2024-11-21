@@ -1,0 +1,70 @@
+library(tidyverse)
+
+## reading the prevalence data for same
+load("result-intercept-low/prev_dat_same_low.Rdata")
+
+prev_dat_same_low |> 
+  reframe(
+    mean = mean(proportion),
+    .by = yij) 
+
+load("result-intercept-low/estimate_dat_same_low.Rdata")
+
+estim_dat_same <- estimate_dat_same_low |> 
+  filter(stat == 'MOR') |> 
+  pivot_longer(
+    cols = c(1:2),
+    names_to = "model",
+    values_to = "estimates"
+  )
+
+estim_dat_same |> 
+  reframe(
+    mean = mean(estimates),
+    .by = model
+  )
+
+estim_dat_same |> 
+  ggplot(mapping = aes(x = estimates, fill = model))+
+  geom_density(alpha = 0.50)+
+  labs(
+    title =  "Density of Estimate for Two Models",
+    x = 'Estimates',
+    y = 'Density'
+  )+
+  scale_fill_discrete("Models")
+
+## reading the prevalence data for diff
+load("result-intercept-low/prev_dat_diff_low.Rdata")
+
+prev_dat_diff_low |> 
+  reframe(
+    mean = mean(proportion),
+    .by = yij) 
+
+## Estimation data for different random effect
+load("result-intercept-low/estimate_dat_diff_low.Rdata")
+
+estim_dat_diff <- estimate_dat_diff_low |> 
+  filter(stat == 'MOR') |> 
+  pivot_longer(
+    cols = c(1:2),
+    names_to = "model",
+    values_to = "estimates"
+  )
+
+estim_dat_diff |> 
+  reframe(
+    mean = mean(estimates),
+    .by = model
+  )
+
+estim_dat_diff |> 
+  ggplot(mapping = aes(x = estimates, fill = model))+
+  geom_density(alpha = 0.50)+
+  labs(
+    title =  "Density of Estimate for Two Models",
+    x = 'Estimates',
+    y = 'Density'
+  )+
+  scale_fill_discrete("Models")

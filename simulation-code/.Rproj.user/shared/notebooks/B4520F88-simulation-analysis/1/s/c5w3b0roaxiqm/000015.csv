@@ -1,0 +1,15 @@
+"0","#| label: sourcing"
+"0","#| warning: false"
+"0","#| message: false"
+"0","#| echo: false"
+"0","library(kableExtra)"
+"2","Registered S3 methods overwritten by 'htmltools':
+  method               from         
+  print.html           tools:rstudio
+  print.shiny.tag      tools:rstudio
+  print.shiny.tag.list tools:rstudio
+"
+"0","source(here::here(""analysis-interccept-low.R""))"
+"2","Error in file(filename, ""r"", encoding = encoding) : 
+  cannot open the connection
+"

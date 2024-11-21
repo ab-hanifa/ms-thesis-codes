@@ -1,0 +1,59 @@
+data_sim_fn_slope <- function(m, n, fixed_coef, sigma_mat, seed){
+
+  require(tidyverse)  
+  require(MASS)
+  
+  N <- m*n
+  set.seed(seed = seed)
+  x1c <- rnorm(N, mean = 0, sd = 1)
+  x2c <- rnorm(N, mean = 0, sd = 1)
+  ujs <- MASS::mvrnorm(m, mu = c(0, 0), Sigma = sigma_mat)
+  ujs1 <- rep(ujs[, 1], each = n)
+  ujs2 <- rep(ujs[, 2], each = n)
+  x2b <- ifelse(x2c <= 0.5, 1, 0)
+  eta12 <- cbind(1, x1c, x2b, x1c*ujs2, ujs1) %*% fixed_coef
+  pi_hat12 <- exp(eta12)/apply(eta12, MARGIN = 1, 
+                              function(x){
+                                1 + sum(exp(x))
+                              })
+  pi_hat3 <- 1 - apply(pi_hat12, MARGIN = 1, sum)
+ # pi_hat <- cbind(pi_hat12, pi_hat3)
+  
+  y <- apply(
+    cbind(pi_hat12, pi_hat3),
+    1, 
+    FUN = function(p){
+      apply(
+        rmultinom(n = 1, size = 1, prob = p), 
+        2, 
+        FUN = function(c) which(c == 1))
+    })
+  
+  df <- tibble(
+    cluster = rep(seq(100), each = 100),
+    cluster_size = rep(seq(100), times = 100),
+    x1c = x1c,
+    x2c = x2c,
+    x2b = x2b,
+    yij = y
+  )
+  return(df)
+}
+
+data_sim_fn_slope(m = 100, n = 100, 
+                   fixed_coef = cbind(c(-0.60, 1.46, 0.73, 1, 1),
+                                      c(-0.75, 1.60, 0.90, 1, 1)),
+                   sigma_mat = diag(c(2.5, 1.5)), 
+                   seed = 1009)
+
+estim_slope_fn <- function(m, n, fixed_coef, sigma_mat, seed){
+  data_gen_int <- data_sim_fn_slope(m, n, fixed_coef, sigma_mat, seed)
+  
+  require(GLMMadaptive)
+  mod1 <- mixed_model(
+    fixed = I(yij == 1) ~ x1c + x2b,
+    random = ~ 1 | cluster,
+    data = data_gen_int,
+    family = binomial("logit"))
+}
+

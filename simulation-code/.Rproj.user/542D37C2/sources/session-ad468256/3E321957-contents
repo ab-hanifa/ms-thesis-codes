@@ -1,0 +1,202 @@
+library(tidyverse)
+library(GLMMadaptive)
+
+data_sim_fn_int <- function(m, n, fixed_coef, sigma_2_u, seed){
+  require(tidyverse)
+  N <- m*n
+  set.seed(seed = seed)
+  x1c <- rnorm(N, mean = 0, sd = 1)
+  x2c <- rnorm(N, mean = 0, sd = 1)
+  uj <- rep(rnorm(m, mean = 0, sd = sqrt(sigma_2_u)), each = n)
+  x2b <- ifelse(x2c <= 0.5, 1, 0)
+  xb_mat <- cbind(1, x1c, x2b, uj)
+  etai <- xb_mat %*% fixed_coef
+  pi_hat12 <- exp(etai)/apply(etai, MARGIN = 1, 
+                              function(x){
+                                1 + sum(exp(x))
+                              })
+  
+  pi_hat3 <- 1 - apply(pi_hat12, MARGIN = 1, sum)
+  pi_hat <- cbind(pi_hat12, pi_hat3)
+  
+  y <- apply(
+    pi_hat,
+    1, 
+    FUN = function(p){
+      apply(
+        rmultinom(n = 1, size = 1, prob = p), 
+        2, 
+        FUN = function(c) which(c == 1))
+    })
+  
+  df <- tibble(
+    cluster = rep(seq(m), each = n),
+    cluster_size = rep(seq(n), times = m),
+    x1c = x1c,
+    reffect = uj,
+    x2b = x2b,
+    yij = y
+  )
+  return(df)
+}
+
+dta_sim <- data_sim_fn_int(m = 100, n = 100, 
+           fixed_coef = cbind(c(-0.80, 1.46, 0.73, 1),
+                              c(-0.95, 1.60, 0.90, 1)),
+           sigma_2_u = 2.5, 
+           seed = 1009)
+
+dta_sim
+
+mod_glmad <- mixed_model(
+  fixed = I(yij == 1) ~ x1c + x2b,
+  random = ~ 1 | cluster,
+  data = dta_sim, nAGQ = 10,
+  family = binomial("logit"))
+
+mod_glmad1 <- mixed_model(
+  fixed = I(yij == 2) ~ x1c + x2b,
+  random = ~ 1 | cluster,
+  data = dta_sim, nAGQ = 10,
+  family = binomial("logit"))
+
+
+estimation_fn_int <- function(m, n, fixed_coef, sigma_2_u, seed){
+  data_gen_int <- data_sim_fn_int(m, n, fixed_coef, sigma_2_u, seed)
+  
+  require(GLMMadaptive)
+  mod1 <- mixed_model(
+    fixed = I(yij == 1) ~ x1c + x2b,
+    random = ~ 1 | cluster,
+    data = data_gen_int,
+    family = binomial("logit"))
+  
+  fixed_efct <- unname(fixef(mod1))
+  beta_0 <- fixed_efct[1]
+  beta_1 <- fixed_efct[2]
+  beta_2 <- fixed_efct[3]
+  
+  sigma_2_u_hat <- mod1$D[[1]] # random effect parameter
+  ### variance of random effect
+  var_sigma_u_2_hat <- vcov(mod1, parm = "var-cov")
+  
+  ## convergence
+  is_converged <- mod1$converged
+  
+  ## MOR1 calculation
+  mor1_hat <- exp(sqrt(2 * sigma_2_u_hat) * qnorm(0.75))
+  
+  ## Log mor to find ci
+  log_mor1 <- log(mor1_hat)
+  
+  # delta method 
+  log_mor_int_expr <- function(x) {
+    sqrt(2 * x) * qnorm(0.75)
+  }
+  
+  J <- numDeriv::jacobian(log_mor_int_expr, x = sigma_2_u_hat)
+  log_se_mor1 <- as.numeric(sqrt(t(J) %*% var_sigma_u_2_hat %*% J))
+  se_mor1_ht <- exp(log_se_mor1)
+  # coverage calculation
+  ci <- log_mor1 + c(-1, 1) * 1.96 * log_se_mor1
+  ci_exp_1 <- exp(ci)
+  true_mor <- exp(sqrt(2 * sigma_2_u) * qnorm(0.75))
+  coverage <- as.numeric(ci_exp_1[1] <= true_mor && ci_exp_1[2] >= true_mor)
+  
+  outcome_vector1 <- tibble(
+    true_mor = true_mor,
+    sigma_2_u_hat = sigma_2_u_hat,
+    MOR_1_hat= mor1_hat,
+    coverage = coverage
+  )
+  
+  if(is.na(is_converged) || !is_converged || mor1_hat > 20 || se_mor1_ht > 15) {
+    out_vec_names <- names(outcome_vector1)
+    outcome_vector1 <- c(rep(NA, length(outcome_vector1) - 1), FALSE)
+    names(outcome_vector1) <- out_vec_names
+  }
+  
+  mod2 <- mixed_model(
+    fixed = I(yij == 2) ~ x1c + x2b,
+    random = ~ 1 | cluster,
+    data = data_gen_int,
+    family = binomial("logit"))
+  
+  is_converged2 <- mod2$converged
+  
+  fixed_efct2 <- unname(fixef(mod2))
+  beta2_0 <- fixed_efct2[1]
+  beta2_1 <- fixed_efct2[2]
+  beta2_2 <- fixed_efct2[3]
+  
+  sigma_2_u_hat_2 <- mod2$D[[1]] # random effect parameter
+  ### variance of random effect
+  var_sigma_u_2_hat_2 <- vcov(mod2, parm = "var-cov")
+  
+  ## MOR1 calculation
+  mor2_hat <- exp(sqrt(2 * sigma_2_u_hat_2) * qnorm(0.75))
+  
+  ## Log mor to find ci
+  log_mor2 <- log(mor2_hat)
+  
+  # delta method 
+  log_mor_int_expr <- function(x) {
+    sqrt(2 * x) * qnorm(0.75)
+  }
+  
+  J2 <- numDeriv::jacobian(log_mor_int_expr, x = sigma_2_u_hat_2)
+  log_se_mor2 <- as.numeric(sqrt(t(J2) %*% var_sigma_u_2_hat_2 %*% J2))
+  se_mor2_ht <- exp(log_se_mor2)
+  
+  # coverage calculation
+  ci2 <- log_mor2 + c(-1, 1) * 1.96 * log_se_mor2
+  ci_exp_2 <- exp(ci2)
+  coverage2 <- as.numeric(ci_exp_2[1] <= true_mor && ci_exp_2[2] >= true_mor)
+  
+  outcome_vector2 <- tibble(
+    sigma_2_u_hat_2 = sigma_2_u_hat_2,
+    MOR_2_hat = mor2_hat,
+    coverage2 = coverage2
+  )
+  if(is.na(is_converged2) || !is_converged2 || mor2_hat > 20 || se_mor2_ht > 15) {
+    out_vec_names2 <- names(outcome_vector2)
+    outcome_vector2 <- c(rep(NA, length(outcome_vector2) - 1), FALSE)
+    names(outcome_vector2) <- out_vec_names2
+  }
+  return(bind_cols(outcome_vector1,
+              outcome_vector2))
+}
+
+estimation_fn_int(m = 100, n = 100, 
+                  fixed_coef = cbind(c(-0.80, 1.46, 0.73, 1),
+                                     c(-0.95, 1.60, 0.90, 1)),
+                  sigma_2_u = 2.5, 
+                  seed = 1009)
+
+
+set.seed(1009)
+samp_seed <- sample(10:10000, size = 1000, replace = FALSE)
+
+results <- map_df(samp_seed, function(x){
+  estimation_fn_int(m = 100, n = 100, 
+                    fixed_coef = cbind(c(-0.80, 1.46, 0.73, 1),
+                                       c(-0.95, 1.60, 0.90, 1)),
+                    sigma_2_u = 2.5, 
+                    seed = x)
+  })
+
+save(results, file = "int_multi.Rdata")
+
+results |> 
+  select(true_mor, MOR_1_hat,
+         MOR_2_hat, sigma_2_u_hat,
+         sigma_2_u_hat_2, everything()) |> 
+  mutate(difference = MOR_1_hat - MOR_2_hat) |> 
+  ggplot(
+    mapping = aes(x = difference))+
+  geom_histogram(mapping = aes(x = difference,
+                               after_stat(density)),
+                 bins = 60,
+                 fill = "steelblue",
+                 color = "black")+
+  geom_density(color = "red")
