@@ -1,4 +1,4 @@
-source(here::here("exploration.R"))
+source(here::here("func_varaince_sd.R"))
 library(GLMMadaptive)
 library(tidyverse)
 set.seed(009)
